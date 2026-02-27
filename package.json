@@ -19,7 +19,7 @@
     "posttest": "npm run lint"
   },
   "dependencies": {
-    "axios": "^1.13.4",
+    "axios": "^1.13.5",
     "dotenv": "^17.2.3",
     "starknet": "^8.9.0"
   },
