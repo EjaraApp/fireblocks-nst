@@ -8,7 +8,8 @@
     "build/src"
   ],
   "scripts": {
-    "test": "mocha build/test/",
+    "test": "mocha --recursive --ignore 'build/test/integration/**' build/test/",
+    "test:integration": "tsc && node build/test/integration/strk.integration.js",
     "lint": "gts lint",
     "clean": "gts clean",
     "compile": "tsc",
@@ -17,12 +18,19 @@
     "pretest": "npm run compile",
     "posttest": "npm run lint"
   },
+  "dependencies": {
+    "axios": "^1.13.4",
+    "dotenv": "^17.2.3",
+    "starknet": "^8.9.0"
+  },
   "devDependencies": {
     "@types/mocha": "^9.1.1",
     "@types/node": "^14.11.2",
     "@types/node-fetch": "^2.6.2",
+    "@types/sinon": "^21.0.0",
     "gts": "^3.1.1",
     "mocha": "^10.0.0",
+    "sinon": "^21.0.1",
     "ts-node": "^10.9.1",
     "typescript": "^5.9.3"
   },
