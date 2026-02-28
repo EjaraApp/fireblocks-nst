@@ -168,6 +168,10 @@ describe('STRK', () => {
     function stubDeployedAccount() {
       // Account is already deployed
       sinon.stub(RpcProvider.prototype, 'getClassHashAt').resolves('0x123');
+      // callContract for getBalance check (address has plenty of balance)
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x174876E800', '0x0']); // 100_000_000_000
       const executeStub = sinon
         .stub(Account.prototype, 'execute')
         .resolves({transaction_hash: FAKE_TX_HASH});
@@ -182,6 +186,11 @@ describe('STRK', () => {
       const getClassHashStub = sinon
         .stub(RpcProvider.prototype, 'getClassHashAt')
         .rejects(new Error('Contract not found'));
+
+      // callContract for getBalance checks (address balance + master wallet)
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x174876E800', '0x0']); // 100_000_000_000 — plenty of balance
 
       // estimateAccountDeployFee for deploy
       sinon
@@ -310,6 +319,9 @@ describe('STRK', () => {
     it('should propagate transfer errors', async () => {
       sinon.stub(RpcProvider.prototype, 'getClassHashAt').resolves('0x123');
       sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x174876E800', '0x0']); // plenty of balance
+      sinon
         .stub(Account.prototype, 'execute')
         .rejects(new Error('nonce mismatch'));
 
@@ -323,6 +335,9 @@ describe('STRK', () => {
       sinon
         .stub(RpcProvider.prototype, 'getClassHashAt')
         .rejects(new Error('not found'));
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x174876E800', '0x0']); // plenty of balance
       sinon
         .stub(Account.prototype, 'estimateAccountDeployFee')
         .rejects(new Error('estimation failed'));
@@ -339,6 +354,10 @@ describe('STRK', () => {
   // ──────────────────────────────────────────────
   describe('send', () => {
     it('should transfer from master wallet to recipient', async () => {
+      // Master wallet has enough balance
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x174876E800', '0x0']); // 100_000_000_000
       const executeStub = sinon
         .stub(Account.prototype, 'execute')
         .resolves({transaction_hash: FAKE_TX_HASH});
@@ -356,6 +375,9 @@ describe('STRK', () => {
     });
 
     it('should wait for transaction confirmation', async () => {
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x174876E800', '0x0']);
       sinon
         .stub(Account.prototype, 'execute')
         .resolves({transaction_hash: FAKE_TX_HASH});
@@ -398,12 +420,121 @@ describe('STRK', () => {
 
     it('should propagate provider errors', async () => {
       sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x174876E800', '0x0']);
+      sinon
         .stub(Account.prototype, 'execute')
         .rejects(new Error('insufficient balance'));
 
       await assert.rejects(
         () => strk.send(FAKE_RECIPIENT, 100n),
         /insufficient balance/
+      );
+    });
+
+    it('should throw when master wallet balance is insufficient', async () => {
+      // Master wallet has only 50 tokens
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x32', '0x0']); // 50
+      await assert.rejects(
+        () => strk.send(FAKE_RECIPIENT, 1000n),
+        /Master wallet balance.*insufficient/
+      );
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // Safety checks
+  // ──────────────────────────────────────────────
+  describe('safety checks', () => {
+    it('sweep should throw when address balance insufficient for requested amount', async () => {
+      // Account is deployed
+      sinon.stub(RpcProvider.prototype, 'getClassHashAt').resolves('0x123');
+      // Address balance is only 100
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x64', '0x0']); // 100
+
+      await assert.rejects(
+        () => strk.sweep(0, FAKE_RECIPIENT, 5000n),
+        /Address balance.*insufficient/
+      );
+    });
+
+    it('sweep should throw when address balance insufficient even if undeployed', async () => {
+      // Account is NOT deployed
+      sinon
+        .stub(RpcProvider.prototype, 'getClassHashAt')
+        .rejects(new Error('not found'));
+      // Address balance is 0 — no funds received yet
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x0', '0x0']);
+
+      await assert.rejects(
+        () => strk.sweep(0, FAKE_RECIPIENT, 5000n),
+        /Address balance.*insufficient/
+      );
+    });
+
+    it('sweep should not deploy when balance check fails', async () => {
+      sinon
+        .stub(RpcProvider.prototype, 'getClassHashAt')
+        .rejects(new Error('not found'));
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x0', '0x0']);
+      const deployStub = sinon
+        .stub(Account.prototype, 'deployAccount')
+        .resolves({} as any);
+
+      await assert.rejects(
+        () => strk.sweep(0, FAKE_RECIPIENT, 5000n),
+        /Address balance.*insufficient/
+      );
+      // Deploy should never have been called
+      assert.ok(deployStub.notCalled);
+    });
+
+    it('sweep without amount should throw when address has zero balance', async () => {
+      sinon.stub(RpcProvider.prototype, 'getClassHashAt').resolves('0x123');
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(['0x0', '0x0']);
+
+      await assert.rejects(
+        () => strk.sweep(0, FAKE_RECIPIENT),
+        /zero balance.*nothing to sweep/
+      );
+    });
+
+    it('deploy should throw when master wallet cannot fund deployment', async () => {
+      // Account is NOT deployed
+      sinon
+        .stub(RpcProvider.prototype, 'getClassHashAt')
+        .rejects(new Error('not found'));
+
+      // Address has enough balance for the transfer
+      const callStub = sinon.stub(RpcProvider.prototype, 'callContract');
+      callStub.resolves(['0x174876E800', '0x0']); // default: plenty
+
+      // estimateAccountDeployFee returns high fee
+      sinon.stub(Account.prototype, 'estimateAccountDeployFee').resolves({
+        overall_fee: 999_000_000_000n,
+        resourceBounds: {},
+        unit: 'FRI',
+      } as any);
+
+      // Master wallet balance is too low for the 150% funding
+      // The deploy check calls getBalance(masterAddress) which uses callContract
+      // We need the first call (address balance check in sweep) to return plenty,
+      // but the second call (master balance in deployAccount) to return too little
+      callStub.onSecondCall().resolves(['0x64', '0x0']); // 100 — way too little
+
+      await assert.rejects(
+        () => strk.sweep(0, FAKE_RECIPIENT, 5000n),
+        /Master wallet balance.*insufficient to fund deployment/
       );
     });
   });
