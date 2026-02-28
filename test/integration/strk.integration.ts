@@ -17,9 +17,9 @@ import {STRK} from '../../src/coins/strk';
 import {getCoinConfig} from '../../src/utils/hvault';
 
 // 0.01 STRK in wei (18 decimals)
-const FUND_AMOUNT = 10_000_000_000_000_000n;
+const SEND_AMOUNT = 10_000_000_000_000_000n;
 // 0.001 STRK
-const TRANSFER_AMOUNT = 1_000_000_000_000_000n;
+const SWEEP_AMOUNT = 1_000_000_000_000_000n;
 
 async function run() {
   console.log('=== STRK Integration Test (Sepolia) ===\n');
@@ -52,46 +52,33 @@ async function run() {
   }
   console.log();
 
-  // 4. Deploy account at index 1 (auto-funds from master, then deploys)
-  const testIndex = 1;
+  // 4. Send from master wallet to generated address (simulates buy flow)
+  const testIndex = 2;
   const addr = strk.generateAddress(testIndex);
-  console.log(`[4] Deploying account at index ${testIndex} (${addr})...`);
-  console.log('    Auto-funding from master wallet + deploying...');
-  try {
-    const deployTx = await strk.deployAccount(testIndex);
-    console.log(`    Deploy TX: ${deployTx}`);
-  } catch (err: any) {
-    if (
-      err.message.includes('already deployed') ||
-      err.message.includes('ALREADY_EXISTS')
-    ) {
-      console.log('    Account already deployed (skipping).');
-    } else {
-      throw err;
-    }
-  }
+  console.log(
+    `[4] Sending ${SEND_AMOUNT} wei from master to index ${testIndex} (${addr})...`
+  );
+  const sendTx = await strk.send(addr, SEND_AMOUNT);
+  console.log(`    Send TX: ${sendTx}`);
   console.log();
 
-  // 5. Fund the deployed account with enough for a transfer
-  console.log(
-    `[5] Funding index ${testIndex} with ${FUND_AMOUNT} wei from master...`
-  );
-  const fundTx = await strk.fundAccount(testIndex, FUND_AMOUNT);
-  console.log(`    Fund TX: ${fundTx}`);
-  const balanceAfterFund = await strk.getBalance(testIndex);
-  console.log(`    Balance after funding: ${balanceAfterFund} wei`);
+  // 5. Check balance at generated address
+  console.log(`[5] Checking balance at index ${testIndex}...`);
+  const addrBalance = await strk.getBalance(testIndex);
+  console.log(`    Balance: ${addrBalance} wei`);
   console.log();
 
-  // 6. Transfer from deployed account back to master
+  // 6. Sweep from generated address back to master (auto-deploys if needed)
   console.log(
-    `[6] Transferring ${TRANSFER_AMOUNT} wei from index ${testIndex} to master...`
+    `[6] Sweeping ${SWEEP_AMOUNT} wei from index ${testIndex} to master...`
   );
-  const transferTx = await strk.transferToken(
+  console.log('    (will auto-deploy account if not already deployed)');
+  const sweepTx = await strk.sweep(
     testIndex,
     config.accountAddress,
-    TRANSFER_AMOUNT
+    SWEEP_AMOUNT
   );
-  console.log(`    Transfer TX: ${transferTx}`);
+  console.log(`    Sweep TX: ${sweepTx}`);
   console.log();
 
   // 7. Final balances
