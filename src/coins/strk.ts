@@ -75,9 +75,21 @@ export class STRK extends Coin {
     }
 
     const address = this.generateAddress(index);
+    const needsDeploy = !(await this.isDeployed(address));
+
+    // When a specific amount is requested, verify balance can cover it before
+    // spending gas on deployment or transfer
+    if (amount !== undefined) {
+      const balance = await this.getBalance(address);
+      if (balance < amount) {
+        throw new Error(
+          `Address balance (${balance}) insufficient for requested amount (${amount})`
+        );
+      }
+    }
 
     // Deploy the account if it hasn't been deployed yet
-    if (!(await this.isDeployed(address))) {
+    if (needsDeploy) {
       await this.deployAccount(index);
     }
 
@@ -91,6 +103,9 @@ export class STRK extends Coin {
     let transferAmount = amount;
     if (transferAmount === undefined) {
       const balance = await this.getBalance(address);
+      if (balance === 0n) {
+        throw new Error('Address has zero balance, nothing to sweep');
+      }
       const fee = await account.estimateInvokeFee([
         {
           contractAddress: STRK_CONTRACT_ADDRESS,
@@ -132,6 +147,14 @@ export class STRK extends Coin {
     }
     if (amount <= 0n) {
       throw new Error(`Amount must be positive, got ${amount}`);
+    }
+
+    // Verify master wallet has enough balance before executing
+    const masterBalance = await this.getBalance(this.config.accountAddress);
+    if (masterBalance < amount) {
+      throw new Error(
+        `Master wallet balance (${masterBalance}) insufficient for amount (${amount})`
+      );
     }
 
     const {transaction_hash} = await this.masterAccount.execute([
@@ -177,6 +200,14 @@ export class STRK extends Coin {
     // Estimate deploy fee and fund with 150% buffer
     const fee = await newAccount.estimateAccountDeployFee(deployPayload);
     const fundAmount = (fee.overall_fee * 3n) / 2n;
+
+    // Verify master wallet can cover the funding before spending gas
+    const masterBalance = await this.getBalance(this.config.accountAddress);
+    if (masterBalance < fundAmount) {
+      throw new Error(
+        `Master wallet balance (${masterBalance}) insufficient to fund deployment (${fundAmount})`
+      );
+    }
 
     // Fund from master wallet
     const {transaction_hash: fundTx} = await this.masterAccount.execute([
