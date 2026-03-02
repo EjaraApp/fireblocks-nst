@@ -7,11 +7,11 @@ export interface CoinConfig {
 
 export interface CoinInterface {
   generateAddress(index: number): string;
-  getBalance(addressOrIndex: number | string): Promise<bigint>;
+  getBalance(addressOrIndex: number | string): Promise<number>;
   sweep(
     index: number,
     recipientAddress: string,
-    amount?: bigint
+    amount?: number
   ): Promise<string>;
-  send(recipientAddress: string, amount: bigint): Promise<string>;
+  send(recipientAddress: string, amount: number): Promise<string>;
 }

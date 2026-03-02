@@ -20,6 +20,13 @@ const FAKE_DEPLOY_TX = '0xdeploy333444';
 const FAKE_RECIPIENT =
   '0x049d36570d4e46f48e99674bd3fcc84644ddd6a40f7f7e7e4b1a2b3c4d5e6f70';
 
+// 100 STRK in wei hex
+const BALANCE_100_STRK = ['0x56BC75E2D63100000', '0x0'];
+// 10 STRK in wei hex
+const BALANCE_10_STRK = ['0x8AC7230489E80000', '0x0'];
+// 0 STRK
+const BALANCE_ZERO = ['0x0', '0x0'];
+
 describe('STRK', () => {
   let strk: STRK;
 
@@ -91,28 +98,28 @@ describe('STRK', () => {
   // getBalance
   // ──────────────────────────────────────────────
   describe('getBalance', () => {
-    it('should return balance for an index', async () => {
+    it('should return balance as a number in STRK', async () => {
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x1388', '0x0']);
+        .resolves(BALANCE_10_STRK);
 
       const balance = await strk.getBalance(0);
-      assert.strictEqual(balance, 5000n);
+      assert.strictEqual(balance, 10);
     });
 
     it('should return balance for a direct address', async () => {
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x270f', '0x0']);
+        .resolves(BALANCE_100_STRK);
 
       const balance = await strk.getBalance(FAKE_RECIPIENT);
-      assert.strictEqual(balance, 9999n);
+      assert.strictEqual(balance, 100);
     });
 
     it('should resolve index to address before querying', async () => {
       const callStub = sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x0', '0x0']);
+        .resolves(BALANCE_ZERO);
       const expectedAddr = strk.generateAddress(3);
 
       await strk.getBalance(3);
@@ -127,21 +134,20 @@ describe('STRK', () => {
     });
 
     it('should return zero balance', async () => {
-      sinon
-        .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x0', '0x0']);
+      sinon.stub(RpcProvider.prototype, 'callContract').resolves(BALANCE_ZERO);
 
       const balance = await strk.getBalance(0);
-      assert.strictEqual(balance, 0n);
+      assert.strictEqual(balance, 0);
     });
 
-    it('should combine u256 low and high parts correctly', async () => {
+    it('should handle fractional balances', async () => {
+      // 0.5 STRK = 500000000000000000 wei = 0x6F05B59D3B20000
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x64', '0x2']);
+        .resolves(['0x6F05B59D3B20000', '0x0']);
 
       const balance = await strk.getBalance(0);
-      assert.strictEqual(balance, 100n + (2n << 128n));
+      assert.strictEqual(balance, 0.5);
     });
 
     it('should throw for negative index', async () => {
@@ -168,10 +174,10 @@ describe('STRK', () => {
     function stubDeployedAccount() {
       // Account is already deployed
       sinon.stub(RpcProvider.prototype, 'getClassHashAt').resolves('0x123');
-      // callContract for getBalance check (address has plenty of balance)
+      // callContract for getBalance check (address has 100 STRK)
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x174876E800', '0x0']); // 100_000_000_000
+        .resolves(BALANCE_100_STRK);
       const executeStub = sinon
         .stub(Account.prototype, 'execute')
         .resolves({transaction_hash: FAKE_TX_HASH});
@@ -190,7 +196,7 @@ describe('STRK', () => {
       // callContract for getBalance checks (address balance + master wallet)
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x174876E800', '0x0']); // 100_000_000_000 — plenty of balance
+        .resolves(BALANCE_100_STRK);
 
       // estimateAccountDeployFee for deploy
       sinon
@@ -220,7 +226,7 @@ describe('STRK', () => {
     it('should transfer with specific amount when account is deployed', async () => {
       const {executeStub} = stubDeployedAccount();
 
-      const txHash = await strk.sweep(0, FAKE_RECIPIENT, 5000n);
+      const txHash = await strk.sweep(0, FAKE_RECIPIENT, 0.5);
 
       assert.strictEqual(txHash, FAKE_TX_HASH);
       assert.ok(executeStub.calledOnce);
@@ -234,10 +240,10 @@ describe('STRK', () => {
       sinon
         .stub(Account.prototype, 'estimateInvokeFee')
         .resolves({overall_fee: 2000n, resourceBounds: {}, unit: 'FRI'} as any);
-      // callContract for getBalance
+      // callContract for getBalance — 10 STRK
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x2710', '0x0']); // 10000
+        .resolves(BALANCE_10_STRK);
       sinon
         .stub(Account.prototype, 'execute')
         .resolves({transaction_hash: FAKE_TX_HASH});
@@ -252,12 +258,15 @@ describe('STRK', () => {
 
     it('should throw when balance too low to cover gas', async () => {
       sinon.stub(RpcProvider.prototype, 'getClassHashAt').resolves('0x123');
-      sinon
-        .stub(Account.prototype, 'estimateInvokeFee')
-        .resolves({overall_fee: 9000n, resourceBounds: {}, unit: 'FRI'} as any);
+      sinon.stub(Account.prototype, 'estimateInvokeFee').resolves({
+        overall_fee: 10_000_000_000_000_000_000n,
+        resourceBounds: {},
+        unit: 'FRI',
+      } as any);
+      // Balance is only 0.5 STRK, gas is huge
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x64', '0x0']); // balance = 100, gas = 13500
+        .resolves(['0x6F05B59D3B20000', '0x0']);
 
       await assert.rejects(
         () => strk.sweep(0, FAKE_RECIPIENT),
@@ -268,7 +277,7 @@ describe('STRK', () => {
     it('should auto-deploy when account is not deployed', async () => {
       const {deployStub, executeStub} = stubUndeployedAccount();
 
-      const txHash = await strk.sweep(0, FAKE_RECIPIENT, 5000n);
+      const txHash = await strk.sweep(0, FAKE_RECIPIENT, 0.5);
 
       assert.strictEqual(txHash, FAKE_TX_HASH);
       // First execute = fund for deploy, second = sweep transfer
@@ -279,7 +288,7 @@ describe('STRK', () => {
     it('should skip deployment when account is already deployed', async () => {
       stubDeployedAccount();
 
-      await strk.sweep(0, FAKE_RECIPIENT, 5000n);
+      await strk.sweep(0, FAKE_RECIPIENT, 0.5);
 
       // getClassHashAt was called and didn't throw → no deploy
       assert.ok(
@@ -290,28 +299,28 @@ describe('STRK', () => {
 
     it('should throw for negative index', async () => {
       await assert.rejects(
-        () => strk.sweep(-1, FAKE_RECIPIENT, 100n),
+        () => strk.sweep(-1, FAKE_RECIPIENT, 1),
         /non-negative integer/
       );
     });
 
     it('should throw for invalid recipient', async () => {
       await assert.rejects(
-        () => strk.sweep(0, 'bad-address', 100n),
+        () => strk.sweep(0, 'bad-address', 1),
         /Invalid recipient address/
       );
     });
 
     it('should throw for zero amount', async () => {
       await assert.rejects(
-        () => strk.sweep(0, FAKE_RECIPIENT, 0n),
+        () => strk.sweep(0, FAKE_RECIPIENT, 0),
         /Amount must be positive/
       );
     });
 
     it('should throw for negative amount', async () => {
       await assert.rejects(
-        () => strk.sweep(0, FAKE_RECIPIENT, -5n),
+        () => strk.sweep(0, FAKE_RECIPIENT, -5),
         /Amount must be positive/
       );
     });
@@ -320,13 +329,13 @@ describe('STRK', () => {
       sinon.stub(RpcProvider.prototype, 'getClassHashAt').resolves('0x123');
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x174876E800', '0x0']); // plenty of balance
+        .resolves(BALANCE_100_STRK);
       sinon
         .stub(Account.prototype, 'execute')
         .rejects(new Error('nonce mismatch'));
 
       await assert.rejects(
-        () => strk.sweep(0, FAKE_RECIPIENT, 100n),
+        () => strk.sweep(0, FAKE_RECIPIENT, 1),
         /nonce mismatch/
       );
     });
@@ -337,13 +346,13 @@ describe('STRK', () => {
         .rejects(new Error('not found'));
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x174876E800', '0x0']); // plenty of balance
+        .resolves(BALANCE_100_STRK);
       sinon
         .stub(Account.prototype, 'estimateAccountDeployFee')
         .rejects(new Error('estimation failed'));
 
       await assert.rejects(
-        () => strk.sweep(0, FAKE_RECIPIENT, 100n),
+        () => strk.sweep(0, FAKE_RECIPIENT, 1),
         /estimation failed/
       );
     });
@@ -354,10 +363,10 @@ describe('STRK', () => {
   // ──────────────────────────────────────────────
   describe('send', () => {
     it('should transfer from master wallet to recipient', async () => {
-      // Master wallet has enough balance
+      // Master wallet has 100 STRK
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x174876E800', '0x0']); // 100_000_000_000
+        .resolves(BALANCE_100_STRK);
       const executeStub = sinon
         .stub(Account.prototype, 'execute')
         .resolves({transaction_hash: FAKE_TX_HASH});
@@ -365,7 +374,7 @@ describe('STRK', () => {
         .stub(RpcProvider.prototype, 'waitForTransaction')
         .resolves({} as any);
 
-      const txHash = await strk.send(FAKE_RECIPIENT, 1000n);
+      const txHash = await strk.send(FAKE_RECIPIENT, 1);
 
       assert.strictEqual(txHash, FAKE_TX_HASH);
       assert.ok(executeStub.calledOnce);
@@ -377,7 +386,7 @@ describe('STRK', () => {
     it('should wait for transaction confirmation', async () => {
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x174876E800', '0x0']);
+        .resolves(BALANCE_100_STRK);
       sinon
         .stub(Account.prototype, 'execute')
         .resolves({transaction_hash: FAKE_TX_HASH});
@@ -385,35 +394,32 @@ describe('STRK', () => {
         .stub(RpcProvider.prototype, 'waitForTransaction')
         .resolves({} as any);
 
-      await strk.send(FAKE_RECIPIENT, 500n);
+      await strk.send(FAKE_RECIPIENT, 0.5);
 
       assert.ok(waitStub.calledOnceWith(FAKE_TX_HASH));
     });
 
     it('should throw for invalid recipient', async () => {
       await assert.rejects(
-        () => strk.send('not-hex', 100n),
+        () => strk.send('not-hex', 1),
         /Invalid recipient address/
       );
     });
 
     it('should throw for empty recipient', async () => {
-      await assert.rejects(
-        () => strk.send('', 100n),
-        /Invalid recipient address/
-      );
+      await assert.rejects(() => strk.send('', 1), /Invalid recipient address/);
     });
 
     it('should throw for zero amount', async () => {
       await assert.rejects(
-        () => strk.send(FAKE_RECIPIENT, 0n),
+        () => strk.send(FAKE_RECIPIENT, 0),
         /Amount must be positive/
       );
     });
 
     it('should throw for negative amount', async () => {
       await assert.rejects(
-        () => strk.send(FAKE_RECIPIENT, -10n),
+        () => strk.send(FAKE_RECIPIENT, -10),
         /Amount must be positive/
       );
     });
@@ -421,24 +427,24 @@ describe('STRK', () => {
     it('should propagate provider errors', async () => {
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x174876E800', '0x0']);
+        .resolves(BALANCE_100_STRK);
       sinon
         .stub(Account.prototype, 'execute')
         .rejects(new Error('insufficient balance'));
 
       await assert.rejects(
-        () => strk.send(FAKE_RECIPIENT, 100n),
+        () => strk.send(FAKE_RECIPIENT, 1),
         /insufficient balance/
       );
     });
 
     it('should throw when master wallet balance is insufficient', async () => {
-      // Master wallet has only 50 tokens
+      // Master wallet has only 0.5 STRK
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x32', '0x0']); // 50
+        .resolves(['0x6F05B59D3B20000', '0x0']);
       await assert.rejects(
-        () => strk.send(FAKE_RECIPIENT, 1000n),
+        () => strk.send(FAKE_RECIPIENT, 10),
         /Master wallet balance.*insufficient/
       );
     });
@@ -451,13 +457,13 @@ describe('STRK', () => {
     it('sweep should throw when address balance insufficient for requested amount', async () => {
       // Account is deployed
       sinon.stub(RpcProvider.prototype, 'getClassHashAt').resolves('0x123');
-      // Address balance is only 100
+      // Address balance is only 0.5 STRK
       sinon
         .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x64', '0x0']); // 100
+        .resolves(['0x6F05B59D3B20000', '0x0']);
 
       await assert.rejects(
-        () => strk.sweep(0, FAKE_RECIPIENT, 5000n),
+        () => strk.sweep(0, FAKE_RECIPIENT, 5),
         /Address balance.*insufficient/
       );
     });
@@ -467,13 +473,11 @@ describe('STRK', () => {
       sinon
         .stub(RpcProvider.prototype, 'getClassHashAt')
         .rejects(new Error('not found'));
-      // Address balance is 0 — no funds received yet
-      sinon
-        .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x0', '0x0']);
+      // Address balance is 0
+      sinon.stub(RpcProvider.prototype, 'callContract').resolves(BALANCE_ZERO);
 
       await assert.rejects(
-        () => strk.sweep(0, FAKE_RECIPIENT, 5000n),
+        () => strk.sweep(0, FAKE_RECIPIENT, 5),
         /Address balance.*insufficient/
       );
     });
@@ -482,15 +486,13 @@ describe('STRK', () => {
       sinon
         .stub(RpcProvider.prototype, 'getClassHashAt')
         .rejects(new Error('not found'));
-      sinon
-        .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x0', '0x0']);
+      sinon.stub(RpcProvider.prototype, 'callContract').resolves(BALANCE_ZERO);
       const deployStub = sinon
         .stub(Account.prototype, 'deployAccount')
         .resolves({} as any);
 
       await assert.rejects(
-        () => strk.sweep(0, FAKE_RECIPIENT, 5000n),
+        () => strk.sweep(0, FAKE_RECIPIENT, 5),
         /Address balance.*insufficient/
       );
       // Deploy should never have been called
@@ -499,9 +501,7 @@ describe('STRK', () => {
 
     it('sweep without amount should throw when address has zero balance', async () => {
       sinon.stub(RpcProvider.prototype, 'getClassHashAt').resolves('0x123');
-      sinon
-        .stub(RpcProvider.prototype, 'callContract')
-        .resolves(['0x0', '0x0']);
+      sinon.stub(RpcProvider.prototype, 'callContract').resolves(BALANCE_ZERO);
 
       await assert.rejects(
         () => strk.sweep(0, FAKE_RECIPIENT),
@@ -515,25 +515,22 @@ describe('STRK', () => {
         .stub(RpcProvider.prototype, 'getClassHashAt')
         .rejects(new Error('not found'));
 
-      // Address has enough balance for the transfer
+      // Address has enough balance for the transfer (100 STRK)
       const callStub = sinon.stub(RpcProvider.prototype, 'callContract');
-      callStub.resolves(['0x174876E800', '0x0']); // default: plenty
+      callStub.resolves(BALANCE_100_STRK);
 
-      // estimateAccountDeployFee returns high fee
+      // estimateAccountDeployFee returns very high fee
       sinon.stub(Account.prototype, 'estimateAccountDeployFee').resolves({
-        overall_fee: 999_000_000_000n,
+        overall_fee: 999_000_000_000_000_000_000n,
         resourceBounds: {},
         unit: 'FRI',
       } as any);
 
-      // Master wallet balance is too low for the 150% funding
-      // The deploy check calls getBalance(masterAddress) which uses callContract
-      // We need the first call (address balance check in sweep) to return plenty,
-      // but the second call (master balance in deployAccount) to return too little
-      callStub.onSecondCall().resolves(['0x64', '0x0']); // 100 — way too little
+      // Master wallet balance on second call is too low
+      callStub.onSecondCall().resolves(['0x6F05B59D3B20000', '0x0']); // 0.5 STRK
 
       await assert.rejects(
-        () => strk.sweep(0, FAKE_RECIPIENT, 5000n),
+        () => strk.sweep(0, FAKE_RECIPIENT, 0.5),
         /Master wallet balance.*insufficient to fund deployment/
       );
     });
