@@ -6,6 +6,28 @@ import {CoinConfig} from '../interfaces/coin_interface';
 const STRK_CONTRACT_ADDRESS =
   '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
+const DECIMALS = 18;
+const ONE_UNIT = 10n ** BigInt(DECIMALS);
+
+/** Convert a human-readable number (e.g. 0.1, 2.5) into wei (bigint). */
+function toWei(value: number): bigint {
+  if (typeof value !== 'number' || !isFinite(value) || value < 0) {
+    throw new Error(`Invalid amount: ${value}`);
+  }
+  // Use string manipulation to avoid floating-point precision loss
+  const str = value.toFixed(DECIMALS);
+  const [whole, frac] = str.split('.');
+  return BigInt(whole) * ONE_UNIT + BigInt(frac);
+}
+
+/** Convert a wei bigint into a human-readable number (e.g. 0.1, 2.5). */
+function fromWei(wei: bigint): number {
+  const whole = wei / ONE_UNIT;
+  const frac = wei % ONE_UNIT;
+  const fracStr = frac.toString().padStart(DECIMALS, '0');
+  return parseFloat(`${whole}.${fracStr}`);
+}
+
 export class STRK extends Coin {
   private publicKey: string;
   private masterAccount: Account;
@@ -33,7 +55,14 @@ export class STRK extends Coin {
     );
   }
 
-  async getBalance(addressOrIndex: number | string): Promise<bigint> {
+  async getBalance(addressOrIndex: number | string): Promise<number> {
+    const wei = await this.getBalanceWei(addressOrIndex);
+    return fromWei(wei);
+  }
+
+  private async getBalanceWei(
+    addressOrIndex: number | string
+  ): Promise<bigint> {
     if (typeof addressOrIndex === 'number') {
       if (!Number.isInteger(addressOrIndex) || addressOrIndex < 0) {
         throw new Error(
@@ -62,7 +91,7 @@ export class STRK extends Coin {
   async sweep(
     index: number,
     recipientAddress: string,
-    amount?: bigint
+    amount?: number
   ): Promise<string> {
     if (!Number.isInteger(index) || index < 0) {
       throw new Error(`Index must be a non-negative integer, got ${index}`);
@@ -70,20 +99,23 @@ export class STRK extends Coin {
     if (!recipientAddress || !recipientAddress.match(/^0x[0-9a-fA-F]+$/)) {
       throw new Error(`Invalid recipient address: ${recipientAddress}`);
     }
-    if (amount !== undefined && amount <= 0n) {
+    if (amount !== undefined && amount <= 0) {
       throw new Error(`Amount must be positive, got ${amount}`);
     }
 
+    const amountWei = amount !== undefined ? toWei(amount) : undefined;
     const address = this.generateAddress(index);
     const needsDeploy = !(await this.isDeployed(address));
 
     // When a specific amount is requested, verify balance can cover it before
     // spending gas on deployment or transfer
-    if (amount !== undefined) {
-      const balance = await this.getBalance(address);
-      if (balance < amount) {
+    if (amountWei !== undefined) {
+      const balance = await this.getBalanceWei(address);
+      if (balance < amountWei) {
         throw new Error(
-          `Address balance (${balance}) insufficient for requested amount (${amount})`
+          `Address balance (${fromWei(
+            balance
+          )}) insufficient for requested amount (${amount})`
         );
       }
     }
@@ -100,9 +132,9 @@ export class STRK extends Coin {
     });
 
     // If no amount specified, estimate gas and sweep the full balance
-    let transferAmount = amount;
+    let transferAmount = amountWei;
     if (transferAmount === undefined) {
-      const balance = await this.getBalance(address);
+      const balance = await this.getBalanceWei(address);
       if (balance === 0n) {
         throw new Error('Address has zero balance, nothing to sweep');
       }
@@ -121,7 +153,9 @@ export class STRK extends Coin {
       transferAmount = balance - gasCost;
       if (transferAmount <= 0n) {
         throw new Error(
-          `Balance (${balance}) too low to cover gas (${gasCost})`
+          `Balance (${fromWei(balance)}) too low to cover gas (${fromWei(
+            gasCost
+          )})`
         );
       }
     }
@@ -141,19 +175,23 @@ export class STRK extends Coin {
     return transaction_hash;
   }
 
-  async send(recipientAddress: string, amount: bigint): Promise<string> {
+  async send(recipientAddress: string, amount: number): Promise<string> {
     if (!recipientAddress || !recipientAddress.match(/^0x[0-9a-fA-F]+$/)) {
       throw new Error(`Invalid recipient address: ${recipientAddress}`);
     }
-    if (amount <= 0n) {
+    if (amount <= 0) {
       throw new Error(`Amount must be positive, got ${amount}`);
     }
 
+    const amountWei = toWei(amount);
+
     // Verify master wallet has enough balance before executing
-    const masterBalance = await this.getBalance(this.config.accountAddress);
-    if (masterBalance < amount) {
+    const masterBalance = await this.getBalanceWei(this.config.accountAddress);
+    if (masterBalance < amountWei) {
       throw new Error(
-        `Master wallet balance (${masterBalance}) insufficient for amount (${amount})`
+        `Master wallet balance (${fromWei(
+          masterBalance
+        )}) insufficient for amount (${amount})`
       );
     }
 
@@ -163,7 +201,7 @@ export class STRK extends Coin {
         entrypoint: 'transfer',
         calldata: CallData.compile({
           recipient: recipientAddress,
-          amount: cairo.uint256(amount),
+          amount: cairo.uint256(amountWei),
         }),
       },
     ]);
@@ -202,10 +240,12 @@ export class STRK extends Coin {
     const fundAmount = (fee.overall_fee * 3n) / 2n;
 
     // Verify master wallet can cover the funding before spending gas
-    const masterBalance = await this.getBalance(this.config.accountAddress);
+    const masterBalance = await this.getBalanceWei(this.config.accountAddress);
     if (masterBalance < fundAmount) {
       throw new Error(
-        `Master wallet balance (${masterBalance}) insufficient to fund deployment (${fundAmount})`
+        `Master wallet balance (${fromWei(
+          masterBalance
+        )}) insufficient to fund deployment (${fromWei(fundAmount)})`
       );
     }
 

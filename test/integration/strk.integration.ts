@@ -16,10 +16,10 @@ import 'dotenv/config';
 import {STRK} from '../../src/coins/strk';
 import {getCoinConfig} from '../../src/utils/hvault';
 
-// 0.01 STRK in wei (18 decimals)
-const SEND_AMOUNT = 10_000_000_000_000_000n;
+// 0.01 STRK
+const SEND_AMOUNT = 0.01;
 // 0.001 STRK
-const SWEEP_AMOUNT = 1_000_000_000_000_000n;
+const SWEEP_AMOUNT = 0.001;
 
 async function run() {
   console.log('=== STRK Integration Test (Sepolia) ===\n');
@@ -37,8 +37,8 @@ async function run() {
   // 2. Check master wallet balance
   console.log('[2] Checking master wallet balance...');
   const masterBalance = await strk.getBalance(config.accountAddress);
-  console.log(`    Balance: ${masterBalance} wei`);
-  if (masterBalance === 0n) {
+  console.log(`    Balance: ${masterBalance} STRK`);
+  if (masterBalance === 0) {
     console.log('    Master wallet has no funds. Cannot proceed.');
     return;
   }
@@ -56,7 +56,7 @@ async function run() {
   const testIndex = 2;
   const addr = strk.generateAddress(testIndex);
   console.log(
-    `[4] Sending ${SEND_AMOUNT} wei from master to index ${testIndex} (${addr})...`
+    `[4] Sending ${SEND_AMOUNT} STRK from master to index ${testIndex} (${addr})...`
   );
   const sendTx = await strk.send(addr, SEND_AMOUNT);
   console.log(`    Send TX: ${sendTx}`);
@@ -65,12 +65,12 @@ async function run() {
   // 5. Check balance at generated address
   console.log(`[5] Checking balance at index ${testIndex}...`);
   const addrBalance = await strk.getBalance(testIndex);
-  console.log(`    Balance: ${addrBalance} wei`);
+  console.log(`    Balance: ${addrBalance} STRK`);
   console.log();
 
   // 6. Sweep from generated address back to master (auto-deploys if needed)
   console.log(
-    `[6] Sweeping ${SWEEP_AMOUNT} wei from index ${testIndex} to master...`
+    `[6] Sweeping ${SWEEP_AMOUNT} STRK from index ${testIndex} to master...`
   );
   console.log('    (will auto-deploy account if not already deployed)');
   const sweepTx = await strk.sweep(
@@ -86,8 +86,8 @@ async function run() {
   try {
     const finalMaster = await strk.getBalance(config.accountAddress);
     const finalAccount = await strk.getBalance(testIndex);
-    console.log(`    Master wallet: ${finalMaster} wei`);
-    console.log(`    Index ${testIndex}:       ${finalAccount} wei`);
+    console.log(`    Master wallet: ${finalMaster} STRK`);
+    console.log(`    Index ${testIndex}:       ${finalAccount} STRK`);
   } catch (err) {
     console.log(
       '    (RPC flaky on final balance check — not a code issue, skipping)'
