@@ -1,6 +1,20 @@
 # Fireblocks NST
 
-Generate receive addresses and manage tokens not natively supported by Fireblocks. Currently supports **STRK** (StarkNet).
+Generate receive addresses and manage tokens not natively supported by Fireblocks. A single private key combined with varying indices produces infinite deterministic addresses. Currently supports **STRK** (StarkNet).
+
+## Installation
+
+Install from GitHub in your project:
+
+```bash
+npm install git+https://github.com/EjaraApp/fireblocks-nst.git#main
+```
+
+Then import in your code:
+
+```typescript
+import { createCoinHandler, STRK } from 'fireblocks-nst';
+```
 
 ## Setup
 
@@ -18,15 +32,11 @@ vault kv put fireblocks/STRK \
 
 ### Environment
 
+Set these in your environment or `.env` file:
+
 ```bash
 HASHICORP_VAULT_ADDRESS=http://127.0.0.1:8200
 HASHICORP_VAULT_TOKEN=your-vault-token
-```
-
-### Install
-
-```bash
-npm install
 ```
 
 ## Usage
@@ -57,16 +67,35 @@ await strk.send(recipientAddress, amount);
 | Method | Description |
 |--------|-------------|
 | `generateAddress(index)` | Returns a deterministic address for the given index. No network call. |
-| `getBalance(indexOrAddress)` | Returns the token balance in wei. Accepts an index or hex address. |
-| `sweep(index, recipient, amount?)` | Transfers tokens from a generated address. Auto-deploys if needed. Omit amount to sweep full balance minus gas. |
-| `send(recipient, amount)` | Transfers tokens from the master wallet to a recipient. |
+| `getBalance(indexOrAddress)` | Returns the balance in human-readable units (e.g. `10.5` STRK). Accepts an index or hex address. |
+| `sweep(index, recipient, amount?)` | Transfers from a generated address. Auto-deploys if needed. Amount in STRK (e.g. `1.5`). Omit to sweep full balance minus gas. |
+| `send(recipient, amount)` | Transfers from the master wallet to a recipient. Amount in STRK (e.g. `0.01`). |
 
-All methods that submit transactions return the transaction hash.
+All amounts are in human-readable units (e.g. `1.5` STRK, not wei). Wei conversion is handled internally. All methods that submit transactions return the transaction hash.
 
-## Testing
+## Direct Usage (Without Vault)
+
+If you want to skip Vault and provide config directly:
+
+```typescript
+import { STRK } from 'fireblocks-nst';
+
+const strk = new STRK({
+  privateKey: '0x...',
+  classHash: '0x...',
+  rpcUrl: 'https://starknet-mainnet.public.blastapi.io',
+  accountAddress: '0x...',
+});
+
+const address = strk.generateAddress(0);
+const balance = await strk.getBalance(address);
+```
+
+## Development
 
 ```bash
-npm test                  # unit tests
+npm install
+npm test                  # unit tests + lint
 npm run test:integration  # Sepolia testnet (requires Vault + funded wallet)
 ```
 
