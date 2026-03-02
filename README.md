@@ -13,7 +13,7 @@ npm install git+https://github.com/EjaraApp/fireblocks-nst.git#main
 Then import in your code:
 
 ```typescript
-import { createCoinHandler, STRK } from 'fireblocks-nst';
+import {createCoinHandler, STRK} from 'fireblocks-nst';
 ```
 
 ## Setup
@@ -23,7 +23,7 @@ import { createCoinHandler, STRK } from 'fireblocks-nst';
 Store token config in HashiCorp Vault at `fireblocks/<TOKEN>`:
 
 ```bash
-vault kv put fireblocks/STRK \
+vault kv put fireblocks/data/STRK \
   PRIVATE_KEY="0x..." \
   ACCOUNT_CLASS_HASH="0x..." \
   ACCOUNT_ADDRESS="0x..." \
@@ -42,7 +42,7 @@ HASHICORP_VAULT_TOKEN=your-vault-token
 ## Usage
 
 ```typescript
-import { createCoinHandler } from 'fireblocks-nst';
+import {createCoinHandler} from 'fireblocks-nst';
 
 const handler = await createCoinHandler();
 const strk = handler.getCoin('STRK');
@@ -55,8 +55,8 @@ const balance = await strk.getBalance(0);
 
 // Sweep: collect crypto from a generated address (sell flow)
 // Automatically deploys the account if needed
-await strk.sweep(0, recipientAddress, amount);  // specific amount
-await strk.sweep(0, recipientAddress);          // full balance minus gas
+await strk.sweep(0, recipientAddress, amount); // specific amount
+await strk.sweep(0, recipientAddress); // full balance minus gas
 
 // Send: transfer from master wallet to a recipient (buy flow)
 await strk.send(recipientAddress, amount);
@@ -64,12 +64,12 @@ await strk.send(recipientAddress, amount);
 
 ## API
 
-| Method | Description |
-|--------|-------------|
-| `generateAddress(index)` | Returns a deterministic address for the given index. No network call. |
-| `getBalance(indexOrAddress)` | Returns the balance in human-readable units (e.g. `10.5` STRK). Accepts an index or hex address. |
+| Method                             | Description                                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `generateAddress(index)`           | Returns a deterministic address for the given index. No network call.                                                          |
+| `getBalance(indexOrAddress)`       | Returns the balance in human-readable units (e.g. `10.5` STRK). Accepts an index or hex address.                               |
 | `sweep(index, recipient, amount?)` | Transfers from a generated address. Auto-deploys if needed. Amount in STRK (e.g. `1.5`). Omit to sweep full balance minus gas. |
-| `send(recipient, amount)` | Transfers from the master wallet to a recipient. Amount in STRK (e.g. `0.01`). |
+| `send(recipient, amount)`          | Transfers from the master wallet to a recipient. Amount in STRK (e.g. `0.01`).                                                 |
 
 All amounts are in human-readable units (e.g. `1.5` STRK, not wei). Wei conversion is handled internally. All methods that submit transactions return the transaction hash.
 
@@ -78,7 +78,7 @@ All amounts are in human-readable units (e.g. `1.5` STRK, not wei). Wei conversi
 If you want to skip Vault and provide config directly:
 
 ```typescript
-import { STRK } from 'fireblocks-nst';
+import {STRK} from 'fireblocks-nst';
 
 const strk = new STRK({
   privateKey: '0x...',

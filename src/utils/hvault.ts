@@ -4,14 +4,15 @@ import {CoinConfig} from '../interfaces/coin_interface';
 
 export async function getCoinConfig(coinName: string): Promise<CoinConfig> {
   const response = await axios.get(
-    `${config.hashicorpVaultAddress}/v1/fireblocks/${coinName}`,
+    `${config.hashicorpVaultAddress}/v1/fireblocks/data/${coinName}`,
     {
       headers: {
         'X-Vault-Token': config.hashicorpVaultToken,
       },
     }
   );
-  const data = response.data.data;
+  const data = response.data.data.data;
+
   return {
     privateKey: data.PRIVATE_KEY,
     classHash: data.ACCOUNT_CLASS_HASH,
