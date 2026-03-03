@@ -210,9 +210,7 @@ export class STRK extends Coin {
     return transaction_hash;
   }
 
-  // ── Internal methods ──────────────────────────
-
-  private async isDeployed(address: string): Promise<boolean> {
+  async isDeployed(address: string): Promise<boolean> {
     try {
       await this.provider.getClassHashAt(address);
       return true;
@@ -221,7 +219,7 @@ export class STRK extends Coin {
     }
   }
 
-  private async deployAccount(index: number): Promise<string> {
+  async deployAccount(index: number): Promise<string> {
     const address = this.generateAddress(index);
     const newAccount = new Account({
       provider: this.provider,

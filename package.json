@@ -10,6 +10,9 @@
   "scripts": {
     "test": "mocha --recursive --ignore 'build/test/integration/**' build/test/",
     "test:integration": "tsc && node build/test/integration/strk.integration.js",
+    "cli:sweep": "tsc && node build/src/cli/sweep.js",
+    "cli:deploy": "tsc && node build/src/cli/deploy.js",
+    "cli:deploy-pool": "tsc && node build/src/cli/deploy-pool.js",
     "lint": "gts lint",
     "clean": "gts clean",
     "compile": "tsc",
