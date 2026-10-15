@@ -27,8 +27,30 @@ vault kv put fireblocks/data/STRK \
   PRIVATE_KEY="0x..." \
   ACCOUNT_CLASS_HASH="0x..." \
   ACCOUNT_ADDRESS="0x..." \
-  RPC_URL="https://rpc.starknet-testnet.lava.build"
+  RPC_URL="https://rpc.starknet-testnet.lava.build" \
+  FEE_PAYER="AVNU_FALLBACK_WALLET"
 ```
+
+`FEE_PAYER` controls who pays transaction fees:
+
+- `AVNU` — Avnu sponsors fees (requires the `fireblocks/AVNU` secret).
+- `WALLET` — the master wallet pays fees (default).
+- `AVNU_FALLBACK_WALLET` — try Avnu, fall back to the wallet on failure.
+
+Avnu is only used where the account supports it (the master account's `send`
+and account deployment). Sweeps from generated addresses always stay
+wallet-funded because the generated-address class has no sponsorship support.
+
+To use Avnu, store its REST paymaster credentials:
+
+```bash
+vault kv put fireblocks/data/AVNU \
+  AVNU_API_URL="https://starknet.api.avnu.fi" \
+  AVNU_API_KEY="..."
+```
+
+> Note: this is Avnu's REST paymaster (`*.api.avnu.fi`, `api-key` header), not
+> the SNIP-29 JSON-RPC product (`*.paymaster.avnu.fi`).
 
 ### Environment
 
