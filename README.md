@@ -91,6 +91,46 @@ const address = strk.generateAddress(0);
 const balance = await strk.getBalance(address);
 ```
 
+## CLI Scripts
+
+Operational scripts for managing deployed addresses. All require Vault to be configured.
+
+### Deploy a single address
+
+```bash
+npm run cli:deploy -- --index 5
+npm run cli:deploy -- --address 0x123...abc
+```
+
+Deploys the account at the given index (or reverse-looks up the index from an address). Skips if already deployed. Funding comes from the master wallet automatically.
+
+### Deploy a pool of addresses
+
+```bash
+npm run cli:deploy-pool -- --start 0 --end 9
+```
+
+Batch-deploys a range of addresses. Prints a summary of deployed / skipped / failed at the end.
+
+### Sweep a single address
+
+```bash
+npm run cli:sweep -- --index 5                    # sweep full balance minus gas
+npm run cli:sweep -- --index 5 --amount 0.5       # sweep specific amount
+npm run cli:sweep -- --address 0x123...abc         # by address
+```
+
+Sweeps funds from a generated address back to the master account. Accepts an index or address, with an optional amount in STRK.
+
+### Sweep a pool of addresses
+
+```bash
+npm run cli:sweep-pool -- --start 0 --end 9                # sweep all balances minus gas
+npm run cli:sweep-pool -- --start 0 --end 9 --amount 0.5   # sweep specific amount per address
+```
+
+Batch-sweeps a range of addresses back to the master account. Skips addresses with zero balance. Prints a summary of swept / skipped / failed at the end.
+
 ## Development
 
 ```bash

@@ -20,6 +20,12 @@ function toWei(value: number): bigint {
   return BigInt(whole) * ONE_UNIT + BigInt(frac);
 }
 
+/** Pad a StarkNet address to 66 chars (0x + 64 hex digits). */
+function padAddress(address: string): string {
+  // Remove 0x prefix, pad to 64 hex chars, re-add prefix
+  return '0x' + address.slice(2).padStart(64, '0');
+}
+
 /** Convert a wei bigint into a human-readable number (e.g. 0.1, 2.5). */
 function fromWei(wei: bigint): number {
   const whole = wei / ONE_UNIT;
@@ -47,11 +53,13 @@ export class STRK extends Coin {
       throw new Error(`Index must be a non-negative integer, got ${index}`);
     }
 
-    return hash.calculateContractAddressFromHash(
-      index,
-      this.config.classHash,
-      CallData.compile({publicKey: this.publicKey}),
-      0
+    return padAddress(
+      hash.calculateContractAddressFromHash(
+        index,
+        this.config.classHash,
+        CallData.compile({publicKey: this.publicKey}),
+        0
+      )
     );
   }
 
@@ -76,7 +84,7 @@ export class STRK extends Coin {
     const address =
       typeof addressOrIndex === 'number'
         ? this.generateAddress(addressOrIndex)
-        : addressOrIndex;
+        : padAddress(addressOrIndex);
 
     const result = await this.provider.callContract({
       contractAddress: STRK_CONTRACT_ADDRESS,
@@ -102,6 +110,7 @@ export class STRK extends Coin {
     if (amount !== undefined && amount <= 0) {
       throw new Error(`Amount must be positive, got ${amount}`);
     }
+    recipientAddress = padAddress(recipientAddress);
 
     const amountWei = amount !== undefined ? toWei(amount) : undefined;
     const address = this.generateAddress(index);
@@ -182,6 +191,7 @@ export class STRK extends Coin {
     if (amount <= 0) {
       throw new Error(`Amount must be positive, got ${amount}`);
     }
+    recipientAddress = padAddress(recipientAddress);
 
     const amountWei = toWei(amount);
 
@@ -210,9 +220,7 @@ export class STRK extends Coin {
     return transaction_hash;
   }
 
-  // ── Internal methods ──────────────────────────
-
-  private async isDeployed(address: string): Promise<boolean> {
+  async isDeployed(address: string): Promise<boolean> {
     try {
       await this.provider.getClassHashAt(address);
       return true;
@@ -221,7 +229,7 @@ export class STRK extends Coin {
     }
   }
 
-  private async deployAccount(index: number): Promise<string> {
+  async deployAccount(index: number): Promise<string> {
     const address = this.generateAddress(index);
     const newAccount = new Account({
       provider: this.provider,
