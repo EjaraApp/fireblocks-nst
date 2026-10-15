@@ -14,6 +14,7 @@
 import 'dotenv/config';
 import {STRK} from '../coins/strk';
 import {getCoinConfig} from '../utils/hvault';
+import {loadAvnuClient} from '../coin_handler';
 
 function parseArgs(): {start: number; end: number; amount?: number} {
   const args = process.argv.slice(2);
@@ -57,7 +58,8 @@ async function main() {
 
   console.log('Loading config from Vault...');
   const config = await getCoinConfig('STRK');
-  const strk = new STRK(config);
+  const avnuClient = await loadAvnuClient();
+  const strk = new STRK(config, avnuClient);
   const master = config.accountAddress;
 
   const sweepDesc = amount ? `${amount} STRK` : 'full balance (minus gas)';

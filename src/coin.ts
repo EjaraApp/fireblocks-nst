@@ -1,15 +1,34 @@
 import {RpcProvider} from 'starknet';
-import {CoinConfig, CoinInterface} from './interfaces/coin_interface';
+import {CoinConfig, CoinInterface, FeePayer} from './interfaces/coin_interface';
+import {AvnuClient} from './utils/avnu';
 
 export class Coin implements CoinInterface {
   name: string;
   config: CoinConfig;
   provider: RpcProvider;
+  avnuClient: AvnuClient | null;
 
-  constructor(name: string, config: CoinConfig) {
+  constructor(
+    name: string,
+    config: CoinConfig,
+    avnuClient?: AvnuClient | null
+  ) {
     this.name = name;
     this.config = config;
     this.provider = new RpcProvider({nodeUrl: config.rpcUrl});
+    this.avnuClient = avnuClient ?? null;
+  }
+
+  get feePayer(): FeePayer {
+    return this.config.feePayer ?? 'WALLET';
+  }
+
+  /** Whether the fee-payer policy allows attempting Avnu sponsorship. */
+  useAvnu(): boolean {
+    return (
+      this.avnuClient !== null &&
+      (this.feePayer === 'AVNU' || this.feePayer === 'AVNU_FALLBACK_WALLET')
+    );
   }
 
   generateAddress(_index: number): string {

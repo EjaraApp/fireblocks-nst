@@ -1,6 +1,16 @@
-import {Account, ec, hash, cairo, CallData} from 'starknet';
+import {
+  Account,
+  ec,
+  hash,
+  cairo,
+  CallData,
+  num,
+  typedData as starknetTypedData,
+  TypedData,
+} from 'starknet';
 import {Coin} from '../coin';
 import {CoinConfig} from '../interfaces/coin_interface';
+import {AvnuCall, AvnuClient, AvnuDeploymentData} from '../utils/avnu';
 
 // STRK ERC-20 contract address (same on mainnet and sepolia)
 const STRK_CONTRACT_ADDRESS =
@@ -38,8 +48,8 @@ export class STRK extends Coin {
   private publicKey: string;
   private masterAccount: Account;
 
-  constructor(config: CoinConfig) {
-    super('STRK', config);
+  constructor(config: CoinConfig, avnuClient: AvnuClient | null = null) {
+    super('STRK', config, avnuClient);
     this.publicKey = ec.starkCurve.getStarkKey(config.privateKey);
     this.masterAccount = new Account({
       provider: this.provider,
@@ -205,17 +215,78 @@ export class STRK extends Coin {
       );
     }
 
-    const {transaction_hash} = await this.masterAccount.execute([
-      {
-        contractAddress: STRK_CONTRACT_ADDRESS,
-        entrypoint: 'transfer',
-        calldata: CallData.compile({
-          recipient: recipientAddress,
-          amount: cairo.uint256(amountWei),
-        }),
-      },
-    ]);
+    const call = this.buildTransferCall(recipientAddress, amountWei);
 
+    if (this.useAvnu()) {
+      try {
+        return await this.sendViaAvnu([call]);
+      } catch (err) {
+        if (this.feePayer === 'AVNU') {
+          throw err;
+        }
+        // AVNU_FALLBACK_WALLET: fall through to the wallet-funded path.
+      }
+    }
+
+    return await this.sendViaWallet([call]);
+  }
+
+  /** Build a STRK ERC-20 `transfer` call in the shape both Avnu and
+   * starknet.js accept. */
+  private buildTransferCall(
+    recipientAddress: string,
+    amountWei: bigint
+  ): AvnuCall {
+    const amount = cairo.uint256(amountWei);
+    return {
+      contractAddress: STRK_CONTRACT_ADDRESS,
+      entrypoint: 'transfer',
+      calldata: [
+        recipientAddress,
+        num.toHex(amount.low),
+        num.toHex(amount.high),
+      ],
+    };
+  }
+
+  /** Sign an Avnu SNIP-9 `OutsideExecution` typed data with the master key. */
+  private signOutsideExecution(
+    typedData: TypedData,
+    accountAddress: string
+  ): string[] {
+    const messageHash = starknetTypedData.getMessageHash(
+      typedData,
+      accountAddress
+    );
+    const {r, s} = ec.starkCurve.sign(messageHash, this.config.privateKey);
+    return [num.toHex(r), num.toHex(s)];
+  }
+
+  /** Execute calls gaslessly via Avnu's paymaster (sponsored). */
+  private async sendViaAvnu(calls: AvnuCall[]): Promise<string> {
+    if (!this.avnuClient) {
+      throw new Error('Avnu client not configured');
+    }
+    const typedData = (await this.avnuClient.buildTypedData({
+      userAddress: this.config.accountAddress,
+      calls,
+    })) as TypedData;
+    const signature = this.signOutsideExecution(
+      typedData,
+      this.config.accountAddress
+    );
+    const transactionHash = await this.avnuClient.execute(
+      this.config.accountAddress,
+      JSON.stringify(typedData),
+      signature
+    );
+    await this.provider.waitForTransaction(transactionHash);
+    return transactionHash;
+  }
+
+  /** Execute calls with the master wallet paying the fee. */
+  private async sendViaWallet(calls: AvnuCall[]): Promise<string> {
+    const {transaction_hash} = await this.masterAccount.execute(calls);
     await this.provider.waitForTransaction(transaction_hash);
     return transaction_hash;
   }
@@ -231,6 +302,39 @@ export class STRK extends Coin {
 
   async deployAccount(index: number): Promise<string> {
     const address = this.generateAddress(index);
+
+    const deploymentData: AvnuDeploymentData = {
+      class_hash: this.config.classHash,
+      salt: num.toHex(index),
+      unique: num.toHex(0),
+      calldata: [num.toHex(this.publicKey)],
+      sigdata: [],
+    };
+
+    if (this.useAvnu()) {
+      try {
+        const txHash = await this.avnuClient!.deployAccount(
+          this.config.accountAddress,
+          deploymentData
+        );
+        await this.provider.waitForTransaction(txHash);
+        return txHash;
+      } catch (err) {
+        if (this.feePayer === 'AVNU') {
+          throw err;
+        }
+        // AVNU_FALLBACK_WALLET: fall through to the wallet-funded path.
+      }
+    }
+
+    return await this.deployViaWallet(index, address);
+  }
+
+  /** Deploy a generated address with the master wallet funding the fee. */
+  private async deployViaWallet(
+    index: number,
+    address: string
+  ): Promise<string> {
     const newAccount = new Account({
       provider: this.provider,
       address,

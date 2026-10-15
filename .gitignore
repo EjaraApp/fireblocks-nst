@@ -108,3 +108,4 @@ src/**/*.js
 
 # IDEs
 .vscode/
+tmp/
