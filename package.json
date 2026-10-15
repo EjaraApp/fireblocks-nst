@@ -23,7 +23,7 @@
     "posttest": "npm run lint"
   },
   "dependencies": {
-    "axios": "^1.13.4",
+    "axios": "^1.19.0",
     "dotenv": "^17.2.3",
     "starknet": "^9.4.2"
   },
@@ -53,7 +53,19 @@
   },
   "homepage": "https://github.com/EjaraApp/fireblocks-nst#readme",
   "overrides": {
-    "serialize-javascript": "^7.0.3",
-    "diff": "^8.0.3"
+    "serialize-javascript": "^7.0.5",
+    "diff": "^8.0.3",
+    "js-yaml@3": "3.15.1",
+    "js-yaml@4": "4.3.1",
+    "brace-expansion@1": "1.1.18",
+    "brace-expansion@2": "2.1.4",
+    "fast-uri": "3.1.5",
+    "flatted": "3.4.4",
+    "form-data": "4.0.6",
+    "lodash": "4.18.0",
+    "picomatch": "2.3.2",
+    "external-editor": {
+      "tmp": "0.2.7"
+    }
   }
 }
