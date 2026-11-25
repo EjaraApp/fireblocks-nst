@@ -5,12 +5,11 @@ import {
   cairo,
   CallData,
   num,
-  typedData as starknetTypedData,
-  TypedData,
+  Call,
+  PaymasterRpc,
 } from 'starknet';
 import {Coin} from '../coin';
 import {CoinConfig} from '../interfaces/coin_interface';
-import {AvnuCall, AvnuClient, AvnuDeploymentData} from '../utils/avnu';
 
 // STRK ERC-20 contract address (same on mainnet and sepolia)
 const STRK_CONTRACT_ADDRESS =
@@ -48,8 +47,8 @@ export class STRK extends Coin {
   private publicKey: string;
   private masterAccount: Account;
 
-  constructor(config: CoinConfig, avnuClient: AvnuClient | null = null) {
-    super('STRK', config, avnuClient);
+  constructor(config: CoinConfig, paymaster: PaymasterRpc | null = null) {
+    super('STRK', config, paymaster);
     this.publicKey = ec.starkCurve.getStarkKey(config.privateKey);
     this.masterAccount = new Account({
       provider: this.provider,
@@ -233,10 +232,7 @@ export class STRK extends Coin {
 
   /** Build a STRK ERC-20 `transfer` call in the shape both Avnu and
    * starknet.js accept. */
-  private buildTransferCall(
-    recipientAddress: string,
-    amountWei: bigint
-  ): AvnuCall {
+  private buildTransferCall(recipientAddress: string, amountWei: bigint): Call {
     const amount = cairo.uint256(amountWei);
     return {
       contractAddress: STRK_CONTRACT_ADDRESS,
@@ -249,43 +245,31 @@ export class STRK extends Coin {
     };
   }
 
-  /** Sign an Avnu SNIP-9 `OutsideExecution` typed data with the master key. */
-  private signOutsideExecution(
-    typedData: TypedData,
-    accountAddress: string
-  ): string[] {
-    const messageHash = starknetTypedData.getMessageHash(
-      typedData,
-      accountAddress
-    );
-    const {r, s} = ec.starkCurve.sign(messageHash, this.config.privateKey);
-    return [num.toHex(r), num.toHex(s)];
-  }
-
   /** Execute calls gaslessly via Avnu's paymaster (sponsored). */
-  private async sendViaAvnu(calls: AvnuCall[]): Promise<string> {
-    if (!this.avnuClient) {
-      throw new Error('Avnu client not configured');
+  private async sendViaAvnu(calls: Call[]): Promise<string> {
+    if (!this.paymaster) {
+      throw new Error('Avnu paymaster not configured');
     }
-    const typedData = (await this.avnuClient.buildTypedData({
-      userAddress: this.config.accountAddress,
+    // starknet.js builds the SNIP-9 outside-execution typed data, signs it with
+    // the account key, and relays it through the paymaster in a single call.
+    const account = new Account({
+      provider: this.provider,
+      address: this.config.accountAddress,
+      signer: this.config.privateKey,
+      paymaster: this.paymaster,
+    });
+    const {transaction_hash} = await account.executePaymasterTransaction(
       calls,
-    })) as TypedData;
-    const signature = this.signOutsideExecution(
-      typedData,
-      this.config.accountAddress
+      {
+        feeMode: {mode: 'sponsored'},
+      }
     );
-    const transactionHash = await this.avnuClient.execute(
-      this.config.accountAddress,
-      JSON.stringify(typedData),
-      signature
-    );
-    await this.provider.waitForTransaction(transactionHash);
-    return transactionHash;
+    await this.provider.waitForTransaction(transaction_hash);
+    return transaction_hash;
   }
 
   /** Execute calls with the master wallet paying the fee. */
-  private async sendViaWallet(calls: AvnuCall[]): Promise<string> {
+  private async sendViaWallet(calls: Call[]): Promise<string> {
     const {transaction_hash} = await this.masterAccount.execute(calls);
     await this.provider.waitForTransaction(transaction_hash);
     return transaction_hash;
@@ -303,22 +287,9 @@ export class STRK extends Coin {
   async deployAccount(index: number): Promise<string> {
     const address = this.generateAddress(index);
 
-    const deploymentData: AvnuDeploymentData = {
-      class_hash: this.config.classHash,
-      salt: num.toHex(index),
-      unique: num.toHex(0),
-      calldata: [num.toHex(this.publicKey)],
-      sigdata: [],
-    };
-
     if (this.useAvnu()) {
       try {
-        const txHash = await this.avnuClient!.deployAccount(
-          this.config.accountAddress,
-          deploymentData
-        );
-        await this.provider.waitForTransaction(txHash);
-        return txHash;
+        return await this.deployViaAvnu(index, address);
       } catch (err) {
         if (this.feePayer === 'AVNU') {
           throw err;
@@ -328,6 +299,36 @@ export class STRK extends Coin {
     }
 
     return await this.deployViaWallet(index, address);
+  }
+
+  /** Deploy a generated (counterfactual) account with Avnu sponsoring the fee. */
+  private async deployViaAvnu(index: number, address: string): Promise<string> {
+    if (!this.paymaster) {
+      throw new Error('Avnu paymaster not configured');
+    }
+    // A sponsored deploy with no calls: starknet.js emits a SNIP-29 `deploy`
+    // transaction (no signature required) and the paymaster pays the fee. The
+    // deployment data must reproduce the same address `generateAddress` derives
+    // (class hash, salt = index, constructor calldata = [publicKey]).
+    const account = new Account({
+      provider: this.provider,
+      address,
+      signer: this.config.privateKey,
+      paymaster: this.paymaster,
+    });
+    const {transaction_hash} = await account.executePaymasterTransaction([], {
+      feeMode: {mode: 'sponsored'},
+      deploymentData: {
+        address,
+        class_hash: this.config.classHash,
+        salt: num.toHex(index),
+        calldata: [num.toHex(this.publicKey)],
+        sigdata: [],
+        version: 1,
+      },
+    });
+    await this.provider.waitForTransaction(transaction_hash);
+    return transaction_hash;
   }
 
   /** Deploy a generated address with the master wallet funding the fee. */

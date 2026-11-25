@@ -10,7 +10,11 @@ export interface CoinConfig {
   feePayer?: FeePayer;
 }
 
-/** Avnu REST paymaster credentials (Vault secret `fireblocks/AVNU`). */
+/**
+ * Avnu SNIP-29 paymaster credentials (Vault secret `fireblocks/AVNU`).
+ * `apiUrl` is the paymaster base URL (e.g. https://starknet.paymaster.avnu.fi);
+ * `apiKey` is the portal key, sent as the `x-paymaster-api-key` header.
+ */
 export interface AvnuConfig {
   apiUrl: string;
   apiKey: string;

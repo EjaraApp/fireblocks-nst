@@ -1,13 +1,14 @@
+import {PaymasterRpc} from 'starknet';
 import {Coin} from './coin';
 import {STRK} from './coins/strk';
 import {getAvnuConfig, getCoinConfig} from './utils/hvault';
-import {AvnuClient} from './utils/avnu';
+import {createAvnuPaymaster} from './utils/avnu';
 
-/** Load the Avnu paymaster client, or return null (wallet-only) if the
+/** Load the Avnu SNIP-29 paymaster client, or return null (wallet-only) if the
  * `fireblocks/AVNU` Vault secret is unavailable. */
-export async function loadAvnuClient(): Promise<AvnuClient | null> {
+export async function loadAvnuPaymaster(): Promise<PaymasterRpc | null> {
   try {
-    return new AvnuClient(await getAvnuConfig());
+    return createAvnuPaymaster(await getAvnuConfig());
   } catch (err) {
     console.warn(
       'Avnu paymaster not configured, falling back to wallet: ',
@@ -26,8 +27,8 @@ export class CoinHandler {
 
   async init(): Promise<void> {
     const strkConfig = await getCoinConfig('STRK');
-    const avnuClient = await loadAvnuClient();
-    this.coins.set('STRK', new STRK(strkConfig, avnuClient));
+    const paymaster = await loadAvnuPaymaster();
+    this.coins.set('STRK', new STRK(strkConfig, paymaster));
   }
 
   getCoin(coinName: string): Coin {
