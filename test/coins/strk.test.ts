@@ -1,9 +1,8 @@
 import assert from 'assert';
 import sinon from 'sinon';
-import {Account, RpcProvider} from 'starknet';
+import {Account, PaymasterRpc, RpcProvider} from 'starknet';
 import {STRK} from '../../src/coins/strk';
 import {CoinConfig, FeePayer} from '../../src/interfaces/coin_interface';
-import {AvnuClient} from '../../src/utils/avnu';
 
 const TEST_CONFIG: CoinConfig = {
   privateKey:
@@ -455,18 +454,22 @@ describe('STRK', () => {
   // Avnu fee-payer routing
   // ──────────────────────────────────────────────
   describe('Avnu fee-payer routing', () => {
-    function makeAvnuClient() {
-      return {
-        buildTypedData: sinon.stub().resolves({}),
-        execute: sinon.stub().resolves('0xavnu_execute'),
-        deployAccount: sinon.stub().resolves('0xavnu_deploy'),
-      } as unknown as AvnuClient;
+    // A real PaymasterRpc instance (its constructor does no network I/O) so that
+    // `useAvnu()` is satisfied. The actual JSON-RPC is intercepted by stubbing
+    // Account.prototype.executePaymasterTransaction in each test.
+    function makePaymaster(): PaymasterRpc {
+      return new PaymasterRpc({
+        nodeUrl: 'https://sepolia.paymaster.avnu.fi',
+        headers: {'x-paymaster-api-key': 'test-key'},
+      });
     }
 
-    it('deployAccount uses Avnu deploy-account when FEE_PAYER=AVNU', async () => {
-      const avnu = makeAvnuClient();
+    it('deployAccount uses the paymaster when FEE_PAYER=AVNU', async () => {
       const cfg: CoinConfig = {...TEST_CONFIG, feePayer: 'AVNU' as FeePayer};
-      const s = new STRK(cfg, avnu);
+      const s = new STRK(cfg, makePaymaster());
+      const payStub = sinon
+        .stub(Account.prototype, 'executePaymasterTransaction')
+        .resolves({transaction_hash: '0xavnu_deploy'});
       sinon
         .stub(RpcProvider.prototype, 'waitForTransaction')
         .resolves({} as any);
@@ -474,19 +477,47 @@ describe('STRK', () => {
       const tx = await s.deployAccount(0);
 
       assert.strictEqual(tx, '0xavnu_deploy');
-      assert.ok((avnu.deployAccount as sinon.SinonStub).calledOnce);
+      assert.ok(payStub.calledOnce);
+      // Sponsored deploy: no calls, sponsored fee mode, deploymentData present.
+      const [calls, details] = payStub.firstCall.args as [
+        unknown[],
+        {feeMode: {mode: string}; deploymentData?: {version: number}}
+      ];
+      assert.strictEqual(calls.length, 0);
+      assert.strictEqual(details.feeMode.mode, 'sponsored');
+      assert.strictEqual(details.deploymentData?.version, 1);
     });
 
-    it('send falls back to wallet when Avnu fails and FEE_PAYER=AVNU_FALLBACK_WALLET', async () => {
-      const avnu = makeAvnuClient();
-      (avnu.buildTypedData as sinon.SinonStub).rejects(
-        new Error('avnu unavailable')
-      );
+    it('send uses the paymaster (sponsored) when FEE_PAYER=AVNU', async () => {
+      const cfg: CoinConfig = {...TEST_CONFIG, feePayer: 'AVNU' as FeePayer};
+      const s = new STRK(cfg, makePaymaster());
+      sinon
+        .stub(RpcProvider.prototype, 'callContract')
+        .resolves(BALANCE_100_STRK);
+      const payStub = sinon
+        .stub(Account.prototype, 'executePaymasterTransaction')
+        .resolves({transaction_hash: '0xavnu_execute'});
+      sinon
+        .stub(RpcProvider.prototype, 'waitForTransaction')
+        .resolves({} as any);
+
+      const tx = await s.send(FAKE_RECIPIENT, 1);
+
+      assert.strictEqual(tx, '0xavnu_execute');
+      assert.ok(payStub.calledOnce);
+      const details = payStub.firstCall.args[1] as {feeMode: {mode: string}};
+      assert.strictEqual(details.feeMode.mode, 'sponsored');
+    });
+
+    it('send falls back to wallet when the paymaster fails and FEE_PAYER=AVNU_FALLBACK_WALLET', async () => {
       const cfg: CoinConfig = {
         ...TEST_CONFIG,
         feePayer: 'AVNU_FALLBACK_WALLET' as FeePayer,
       };
-      const s = new STRK(cfg, avnu);
+      const s = new STRK(cfg, makePaymaster());
+      sinon
+        .stub(Account.prototype, 'executePaymasterTransaction')
+        .rejects(new Error('avnu unavailable'));
       sinon
         .stub(RpcProvider.prototype, 'callContract')
         .resolves(BALANCE_100_STRK);
@@ -503,32 +534,30 @@ describe('STRK', () => {
       assert.ok(executeStub.calledOnce);
     });
 
-    it('deployAccount falls back to wallet when Avnu fails and FEE_PAYER=AVNU_FALLBACK_WALLET', async () => {
-      const avnu = makeAvnuClient();
-      (avnu.deployAccount as sinon.SinonStub).rejects(
-        new Error('avnu unavailable')
-      );
+    it('deployAccount falls back to wallet when the paymaster fails and FEE_PAYER=AVNU_FALLBACK_WALLET', async () => {
       const cfg: CoinConfig = {
         ...TEST_CONFIG,
         feePayer: 'AVNU_FALLBACK_WALLET' as FeePayer,
       };
-      const s = new STRK(cfg, avnu);
+      const s = new STRK(cfg, makePaymaster());
       sinon
-        .stub(RpcProvider.prototype, 'getClassHashAt')
-        .rejects(new Error('not deployed'));
+        .stub(Account.prototype, 'executePaymasterTransaction')
+        .rejects(new Error('avnu unavailable'));
       sinon
         .stub(RpcProvider.prototype, 'callContract')
         .resolves(BALANCE_100_STRK);
       sinon
         .stub(Account.prototype, 'estimateAccountDeployFee')
         .resolves({overall_fee: 1000n, resourceBounds: {}, unit: 'FRI'} as any);
-      sinon
+      const executeStub = sinon
         .stub(Account.prototype, 'execute')
         .resolves({transaction_hash: FAKE_FUND_TX});
-      sinon.stub(Account.prototype, 'deployAccount').resolves({
-        contract_address: '0x123',
-        transaction_hash: FAKE_DEPLOY_TX,
-      });
+      const deployStub = sinon
+        .stub(Account.prototype, 'deployAccount')
+        .resolves({
+          contract_address: '0x123',
+          transaction_hash: FAKE_DEPLOY_TX,
+        });
       sinon
         .stub(RpcProvider.prototype, 'waitForTransaction')
         .resolves({} as any);
@@ -536,7 +565,8 @@ describe('STRK', () => {
       const tx = await s.deployAccount(0);
 
       assert.strictEqual(tx, FAKE_DEPLOY_TX);
-      assert.ok((avnu.deployAccount as sinon.SinonStub).calledOnce);
+      assert.ok(executeStub.calledOnce); // master wallet funded the deploy
+      assert.ok(deployStub.calledOnce);
     });
   });
 
