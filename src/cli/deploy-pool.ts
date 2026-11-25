@@ -12,7 +12,7 @@
 import 'dotenv/config';
 import {STRK} from '../coins/strk';
 import {getCoinConfig} from '../utils/hvault';
-import {loadAvnuClient} from '../coin_handler';
+import {loadAvnuPaymaster} from '../coin_handler';
 
 function parseArgs(): {start: number; end: number} {
   const args = process.argv.slice(2);
@@ -46,8 +46,8 @@ async function main() {
 
   console.log('Loading config from Vault...');
   const config = await getCoinConfig('STRK');
-  const avnuClient = await loadAvnuClient();
-  const strk = new STRK(config, avnuClient);
+  const paymaster = await loadAvnuPaymaster();
+  const strk = new STRK(config, paymaster);
 
   console.log(`Deploying ${total} addresses (index ${start} to ${end})...\n`);
 
