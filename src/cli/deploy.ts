@@ -13,7 +13,7 @@
 import 'dotenv/config';
 import {STRK} from '../coins/strk';
 import {getCoinConfig} from '../utils/hvault';
-import {loadAvnuClient} from '../coin_handler';
+import {loadAvnuPaymaster} from '../coin_handler';
 
 const MAX_INDEX_SEARCH = 10000;
 
@@ -68,8 +68,8 @@ async function main() {
 
   console.log('Loading config from Vault...');
   const config = await getCoinConfig('STRK');
-  const avnuClient = await loadAvnuClient();
-  const strk = new STRK(config, avnuClient);
+  const paymaster = await loadAvnuPaymaster();
+  const strk = new STRK(config, paymaster);
 
   let index: number;
   if (parsed.index !== undefined) {
